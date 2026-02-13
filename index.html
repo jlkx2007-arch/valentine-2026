@@ -247,6 +247,89 @@ input[type=color]{background:none;border:none;width:26px;height:26px;cursor:poin
     100%{transform:translate(calc(var(--tx, 0) * 1.5), -100vh) scale(1.5) rotate(20deg);opacity:0;}
 }
 
+/* ═══ SECRET EASTER EGG OVERLAY ═══ */
+#secret-overlay{
+    position:fixed;inset:0;z-index:99999;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(3,2,10,.92);backdrop-filter:blur(18px);
+    opacity:0;pointer-events:none;
+    transition:opacity .6s ease;
+}
+#secret-overlay.visible{opacity:1;pointer-events:all;}
+
+#secret-img-wrap{
+    position:relative;
+    width:min(66vw, 66vh * 1.5);
+    max-width:66vw; max-height:66vh;
+    border-radius:16px;
+    box-shadow:0 0 80px rgba(255,77,133,.5), 0 0 160px rgba(201,123,255,.25), 0 30px 80px rgba(0,0,0,.8);
+    overflow:hidden;
+    transform:scale(0.85);
+    transition:transform .65s cubic-bezier(0.34,1.56,0.64,1);
+}
+#secret-overlay.visible #secret-img-wrap{transform:scale(1);}
+
+#secret-img{
+    width:100%;height:100%;
+    object-fit:cover;
+    display:block;
+}
+
+/* Animated glowing border around secret image */
+#secret-img-wrap::before{
+    content:'';position:absolute;inset:-2px;border-radius:18px;z-index:1;pointer-events:none;
+    background:linear-gradient(135deg,#ff4d85,#c97bff,#4dd8ff,#ff4d85);
+    background-size:300% 300%;
+    animation:secretBorderSpin 3s linear infinite;
+    mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite:exclude;-webkit-mask-composite:xor;
+    padding:2px;
+}
+@keyframes secretBorderSpin{
+    0%{background-position:0% 50%}
+    50%{background-position:100% 50%}
+    100%{background-position:0% 50%}
+}
+
+#secret-caption{
+    margin-top:22px;
+    font-family:'Cormorant Garamond',serif;
+    font-size:22px;font-style:italic;font-weight:300;
+    letter-spacing:1.5px;text-align:center;
+    background:linear-gradient(135deg,#ff4d85,#c97bff);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .5s .3s ease, transform .5s .3s ease;
+}
+#secret-overlay.visible #secret-caption{opacity:1;transform:translateY(0);}
+
+#secret-hint{
+    margin-top:10px;font-size:10px;letter-spacing:2px;
+    text-transform:uppercase;color:rgba(255,255,255,.25);
+    opacity:0;transition:opacity .5s .5s ease;
+}
+#secret-overlay.visible #secret-hint{opacity:1;}
+
+/* Dual-fist charge ring — shown while holding */
+#charge-ring{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:90px;height:90px;z-index:99998;
+    pointer-events:none;opacity:0;transition:opacity .3s;
+}
+#charge-ring.active{opacity:1;}
+#charge-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
+#charge-arc{
+    fill:none;stroke:url(#chargeGrad);stroke-width:3;stroke-linecap:round;
+    stroke-dasharray:226;stroke-dashoffset:226;transition:stroke-dashoffset .05s linear;
+}
+#charge-label{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:9px;letter-spacing:1.5px;text-transform:uppercase;
+    color:rgba(255,255,255,.6);text-align:center;line-height:1.4;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .prop-question{font-size:36px;padding:0 20px}
@@ -371,6 +454,30 @@ input[type=color]{background:none;border:none;width:26px;height:26px;cursor:poin
 </div>
 
 <div id="canvas-container" style="display:none"></div>
+<!-- SECRET EASTER EGG — triggered by holding both fists for 1.5s -->
+<div id="secret-overlay">
+    <div id="secret-img-wrap">
+        <img id="secret-img" src="secret.jpg" alt="💕">
+    </div>
+    <div id="secret-caption">Happy Valentine's Day, my love 💕</div>
+    <div id="secret-hint">Open either hand to close</div>
+</div>
+
+<!-- Dual-fist charge ring -->
+<div id="charge-ring">
+    <svg viewBox="0 0 80 80">
+        <defs>
+            <linearGradient id="chargeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ff4d85"/>
+                <stop offset="100%" stop-color="#c97bff"/>
+            </linearGradient>
+        </defs>
+        <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3"/>
+        <circle id="charge-arc" cx="40" cy="40" r="36"/>
+    </svg>
+    <div id="charge-label">Hold<br>✊✊</div>
+</div>
+
 <video class="input_video" style="display:none"></video>
 <audio id="bg-audio" loop></audio>
 
@@ -1020,6 +1127,47 @@ const FIST_THRESH=0.20;
 const OPEN_THRESH=0.30;
 let rightMode='spread';
 
+// ═══════════════════════════════════════════
+// SECRET EASTER EGG — Dual fist hold
+// ═══════════════════════════════════════════
+const SECRET_HOLD_MS = 1500;   // hold both fists this long to trigger
+const CIRC = 226;              // stroke-dasharray of charge arc (2π × 36)
+let dualFistT0   = null;       // timestamp when both fists detected
+let secretShown  = false;
+
+const secretOverlay = document.getElementById('secret-overlay');
+const chargeRingEl  = document.getElementById('charge-ring');
+const chargeArcEl   = document.getElementById('charge-arc');
+
+function showSecret(){
+    if(secretShown) return;
+    secretShown = true;
+    chargeRingEl.classList.remove('active');
+    dualFistT0 = null;
+    secretOverlay.classList.add('visible');
+    // Pause music slightly for drama
+    const aud = document.getElementById('bg-audio');
+    const vol = aud.volume;
+    gsap.to(aud, {volume: vol * 0.25, duration: 0.4});
+}
+
+function hideSecret(){
+    if(!secretShown) return;
+    secretShown = false;
+    secretOverlay.classList.remove('visible');
+    const aud = document.getElementById('bg-audio');
+    gsap.to(aud, {volume: 0.7, duration: 0.6});
+}
+
+// Click/tap anywhere on overlay to dismiss
+secretOverlay.addEventListener('click', hideSecret);
+
+// Keyboard shortcut: press Alt+V to trigger manually (mouse fallback)
+window.addEventListener('keydown', e => {
+    if(e.altKey && e.key.toLowerCase() === 'v'){ secretShown ? hideSecret() : showSecret(); }
+    if(e.key === 'Escape' && secretShown){ hideSecret(); }
+});
+
 function hideLoading(){
     if(loadingHidden)return;loadingHidden=true;
     const el=document.getElementById('loading');
@@ -1197,6 +1345,42 @@ function onResults(res){
         dwellRing.style.display='none';
         dwellProg=0;dwellTgt=null;dwellT0=null;
         dotLeft.classList.remove('dwelling');
+    }
+
+    // ── DUAL FIST EASTER EGG DETECTION ──
+    // Requires BOTH hands visible and both fully fisted
+    if(rightLm && leftLm && !secretShown){
+        const rFist = calcOpenness(rightLm) < FIST_THRESH;
+        const lFist = calcOpenness(leftLm)  < FIST_THRESH;
+
+        if(rFist && lFist){
+            if(!dualFistT0) dualFistT0 = performance.now();
+            const held    = performance.now() - dualFistT0;
+            const progress = Math.min(held / SECRET_HOLD_MS, 1);
+
+            // Show and animate the charge ring
+            chargeRingEl.classList.add('active');
+            chargeArcEl.style.strokeDashoffset = CIRC * (1 - progress);
+
+            if(progress >= 1) showSecret();
+        } else {
+            // Either hand opened — reset
+            dualFistT0 = null;
+            chargeRingEl.classList.remove('active');
+            chargeArcEl.style.strokeDashoffset = CIRC;
+        }
+    } else if(!secretShown) {
+        dualFistT0 = null;
+        chargeRingEl.classList.remove('active');
+        chargeArcEl.style.strokeDashoffset = CIRC;
+    }
+
+    // Dismiss secret if either hand opens while it's shown
+    if(secretShown && (rightLm || leftLm)){
+        const anyOpen =
+            (rightLm && calcOpenness(rightLm) > OPEN_THRESH) ||
+            (leftLm  && calcOpenness(leftLm)  > OPEN_THRESH);
+        if(anyOpen) hideSecret();
     }
 }
 
